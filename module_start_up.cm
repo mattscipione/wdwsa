@@ -1,0 +1,912 @@
+& Single Module Start Up for Disney V-Series Systems
+& Developed by Stratus Professional Services
+&
+& MODIFICATION HISTORY
+& 2017-03-09  Greg Smith    make VOS18 compatible and remove the 
+&                            dev, tst, prd versions
+& 2013-10-10  Greg Smith    added forbidden_password table to
+&                           set_password_security
+& 2013-07-29  Greg Smith    Start nmpd at a priority of 4
+& 2013-07-25  Matt Scipione Added LTS start up
+& 2013-05-31  Greg Smith    set accounting for LTS
+& 2013-05-07  RKovalcik     start ndmpd
+& 2013-04-23  Greg Smith    set FIN_WAIT_2 timeout value to 120 sec;
+&                           start sightline agent
+& 2013-03-01  Greg Smith    add batch_admin; start normal queue
+& 2012-12-17  RKovalcik     Configure OSL
+& 2012-12-13  Ketcham       Fix typos; accounting_admin startup
+& 2012-11-15  Ketcham       Set accounting_admin for everything;
+&                           security_admin and audit_admin
+& 2012-11-02  Ketcham       Added LTS/OnGuard commands for dev
+& 2012-10-29  Ketcham       Conversion from sample_module_start_up.17.1
+&
+&begin_parameters
+&end_parameters privileged
+&echo command_lines
+&mode no_abort
+&
+& ********** Do not add commands to the module_start_up ahead of the
+& ********** invocation of "install_new_files" except as explicitly
+& ********** allowed in the comments.  Do not move commands that appear
+& ********** after the invocation of "install_new_files" to a point prior
+& ********** to this invocation.
+&
+log_syserr_message 'Begin module start-up.' -direct
+&
+& ********** You can use the following variable to perform different
+& ********** actions for different modules of a multi-module system.
+&
+&set_string module_name (after (current_module) #)
+&set_string system_name (before (current_module) #)
+&
+&
+& /* 03-09-17 GMS remove the dev, tst, prd boot type calls
+&
+& The Disney v-series modules are named %wdpr_orl_dev, %wdpr_orl_tst
+& and %wdpr_prl_prd.  The following command makes the boot_type be 
+& "dev", "prd" or "tst". 
+& &set_string boot_type (reverse (before (reverse &system_name&) _))
+&
+& ********** The following command will cause all error messages from
+& ********** module_start_up to be displayed on the monitor terminal and
+& ********** written to the syserr_log.
+&
+set_system_log_mode on
+&
+& ********** The following command will create the OS symbol table file
+& ********** if it either does not exist or is the incorrect version.
+&
+create_os_symtab -no_force
+&
+&
+& ********** In case this is a manual boot, mount the disks now.  Add
+& ********** paging files once their disks are mounted.
+&
+!mount_disk -all
+&
+& ********** add_paging_file {file}, one for each paging file.
+& #m1_d02>Paging>paging_file provides 8GB of paging.  If more paging space
+& is needed add an additional paging file to #m1_d03.
+&
+!add_paging_file #m1_d02>Paging>paging_file
+&
+&
+& ***** Here is where you adjust the default limits for heap, stack,
+& ***** total address space, cpu time, stream file size, keep file
+& ***** creation, and number of ports.  Unless you have a good reason,
+& ***** don't change the system defaults because they allow maximum use
+& ***** of all resources.  Also, some layered products require high
+& ***** limits.  If you change them, use values that retain the
+& ***** following properties:
+& ***** 
+& *****      1. initial_X <= maximum_X (where X = heap, stack, etc.)
+& *****      2. initial_stack + initial_heap <= initial_total
+& *****      3. maximum_stack + maximum_heap <= maximum_total
+& *****      4. initial_total = maximum_total
+& ***** 
+& ***** Rule 4 allows POSIX programs to raise the heap and/or stack
+& ***** limits up to the maximum value without first raising the total
+& ***** limit.  These sample values limit the total address space to
+& ***** 1GB (the default is ~2GB); modify them according to your needs.
+&
+& Note that VOS 17 recommends leaving this commented out, unless it's
+& necessary to REDUCE the limits.  VOS 17 defaults to max values.
+&
+& !update_default_cmd_limits &+
+&      -maximum_total_limit 1073741824 &+
+&      -maximum_heap_limit  1006632960 &+
+&      -maximum_stack_limit   67108864 &+
+&      -initial_total_limit 1073741824 &+
+&      -initial_heap_limit   536870912 &+
+&      -initial_stack_limit    8388608
+&
+& ********** Here is where you tailor the default library path names.
+&
+& ********** >system>applications_library is your local site's program
+& ********** library, if you have created it.  You may also add other
+& ********** libraries of this type here if they exist.
+&
+& add_library_path         command -no_check >system>applications_library
+& add_default_library_path command -no_check >system>applications_library
+&
+& Add LTS/OnGuard user library at the beginning of the list.
+  add_library_path         command -no_check >system>lts_library
+  add_default_library_path command -no_check >system>lts_library
+  add_library_path         command -no_check >system>lts>command_library
+  add_default_library_path command -no_check >system>lts>command_library
+& 
+& ********** Uncomment the block(s) below the names of each product
+& ********** you have purchased on this module:
+&
+& ********** S099 -- System Tools
+&
+& add_library_path         command -no_check >system>tools_library
+& add_default_library_path command -no_check >system>tools_library
+&
+& ********** S000 -- GNU Tools
+&
+add_library_path         command -no_check >system>gnu_library>bin
+add_default_library_path command -no_check >system>gnu_library>bin
+&
+& ********** S266 -- Apache with PHP (requires POSIX)
+&
+&if (software_purchased S266) &then &do
+&if (exists -directory (master_disk)>opt>apache)
+&then &set_string prefix_dir (master_disk)>opt>apache
+&else &set_string prefix_dir (master_disk)>system>apache2
+add_library_path         command -no_check &prefix_dir&>bin
+add_default_library_path command -no_check &prefix_dir&>bin
+&if (exists -directory >opt>libxml2>bin) &then &do
+add_library_path         command -no_check >opt>libxml2>bin >opt>php>bin
+add_default_library_path command -no_check >opt>libxml2>bin >opt>php>bin
+&end
+add_library_path         include -no_check &prefix_dir&>include
+add_default_library_path include -no_check &prefix_dir&>include
+add_library_path         object  -no_check &prefix_dir&>lib
+add_default_library_path object  -no_check &prefix_dir&>lib
+&end
+&
+& ********** S270 -- OpenSSL/OpenSSH support (requires POSIX)
+&
+&if (software_purchased S270) &then &do
+&if (exists -directory (master_disk)>opt>openssl)
+& -- 2.1
+&then &set_string prefix_dir >opt
+& -- 2.0
+&else &set_string prefix_dir >system
+add_library_path         command -no_check &prefix_dir&>openssl>bin
+add_default_library_path command -no_check &prefix_dir&>openssl>bin
+add_library_path         include -no_check &prefix_dir&>openssl>include
+add_default_library_path include -no_check &prefix_dir&>openssl>include
+add_library_path         object  -no_check &prefix_dir&>openssl>lib
+add_default_library_path object  -no_check &prefix_dir&>openssl>lib
+&end
+&
+& ********** S272 -- MySQL (requires POSIX)
+&
+&if (software_purchased S272) &then &do
+add_library_path         command -no_check >opt>mysql>bin
+add_default_library_path command -no_check >opt>mysql>bin
+add_library_path         include -no_check >opt>mysql>include>mysql
+add_default_library_path include -no_check >opt>mysql>include>mysql
+add_library_path         object  -no_check >opt>mysql>lib>mysql
+add_default_library_path object  -no_check >opt>mysql>lib>mysql
+&end
+&
+& ********** -- Streams-based TCP/IP (STCP) Protocol Support
+&
+add_library_path         command -no_check >system>stcp>command_library
+add_default_library_path command -no_check >system>stcp>command_library
+&
+& ********** STCP Compatibility Library support
+& ********** Uncomment if you want to bind your OS_TCP/IP program to the STCP
+& ********** compatibility library. Make sure that the complib object library
+& ********** takes precedence over the standard STCP and C object libraries.
+&
+& add_library_path         object  -no_check >system>stcp>object_library>complib
+& add_default_library_path object  -no_check >system>stcp>object_library>complib 
+& add_library_path         include -no_check >system>stcp>include_library>compat
+& add_default_library_path include -no_check >system>stcp>include_library>compat
+&            
+& ********** Streams-based TCP/IP (STCP) Application Support is now
+& ********** into the C and POSIX runtime libraries. No need to search
+& ********** separate directories.
+&
+& ********** S031 -- POSIX support
+& ********** Note that if you uncomment these commands you are mandating
+& ********** the use of POSIX support.
+&
+& ********** POSIX thread support
+& add_library_path         object -no_check >system>posix_object_library>pthread
+& add_default_library_path object -no_check >system>posix_object_library>pthread
+&
+& ********** POSIX
+& add_library_path         object -no_check >system>posix_object_library
+& add_default_library_path object -no_check >system>posix_object_library
+&
+& ********** S031 -- C Runtime
+&
+& add_library_path         object -no_check >system>c_object_library
+& add_default_library_path object -no_check >system>c_object_library
+&
+& ********** Make sure the standard object_library is last!
+&
+delete_library_path         object           >system>object_library
+add_library_path            object -no_check >system>object_library
+delete_default_library_path object           >system>object_library 
+add_default_library_path    object -no_check >system>object_library 
+&
+& ********** Make sure the standard include_library is last!
+delete_library_path         include           >system>include_library
+add_library_path            include -no_check >system>include_library
+delete_default_library_path include           >system>include_library 
+add_default_library_path    include -no_check >system>include_library 
+&
+& ********** Here is where you can define site-specific terminal types.
+& ********** You may add as many define_terminal_type commands here as
+& ********** you need.
+&
+& define_terminal_type >system>sample_programs>unsupported_ttps>mac.ttp -no_ask
+& define_terminal_type >your_directory>your_terminal.ttp -no_ask
+&
+& ********** Uncomment to load support for IBM terminals
+&
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm5150_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3151_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3161_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3162_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3163_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3164_sos
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3162
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3163
+& install_terminal_type -no_ask >system>kernel_loadable_library>ibm3164
+&
+& define_terminal_type >system>sample_programs>unsupported_ttps>ibm5262 5262 -no_ask
+& define_terminal_type >system>sample_programs>unsupported_ttps>ibm3812 3812 -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224dc 42dc -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224dd 42dd -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224tc 42tc -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224td 42td -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224nc 42nc -no_ask
+& define_terminal_type >system>sample_programs>ibm_supported_ttps>ibm4224nd 42nd -no_ask
+& define_terminal_type >system>sample_programs>supported_ttps>ibm3278_m2 -no_ask
+& define_terminal_type >system>sample_programs>unsupported_ttps>ibm4245 4245 -no_ask
+&
+& ********** Configure the various parts of the system.
+&
+configure_modules
+configure_systems
+configure_devices
+configure_disks
+&
+& we are still using the login_admin and the set_password_security commands
+& configure_login_admin
+& configure_password_security
+&
+& ********** The following 2 lines are needed if you buy Network or X.25.
+&
+& configure_gateways
+& configure_routes
+&
+& ********** Uncomment the following line if you will be using a
+& ********** language other than us_english
+&
+& configure_languages
+&
+& ********** Set the current language to a desired configured language so 
+& ********** system processes can use that language, e.g. japanese.
+&
+& set_language japanese
+&
+install_new_files -syserr
+&
+&
+&    Set STCP host name for module
+&    +++ Replace HOSTNAME with IP host name.
+&
+& hostname HOSTNAME
+&
+& ********** Load comm drivers
+&
+configure_comm_protocol af_unix
+configure_comm_protocol pt_tioc_mod
+configure_comm_protocol random
+configure_comm_protocol stcp
+configure_comm_protocol streams_pipe
+configure_comm_protocol timod
+configure_comm_protocol tnmod
+configure_comm_protocol udp
+configure_comm_protocol urandom
+&
+& ********** Here is where we start registration database server for posix
+&
+delete_file >Overseer>posix_regdb_server.old -brief
+rename >Overseer>posix_regdb_server.out posix_regdb_server.old
+create_file >Overseer>posix_regdb_server.out
+set_implicit_locking >Overseer>posix_regdb_server.out
+&
+!start_process '>system>command_library>posix_regdb_server' &+
+  -process_name posix_regdb_server -output_path &+
+  >Overseer>posix_regdb_server.out -privileged -priority 7 &+
+  -current_dir >system>command_library
+&
+&     Start the STCP stack and daemons by calling the correct start_stcp_xxx
+&     for this module
+&
+& /* 03-09-17 GMS remove the dev, tst, prd boot type calls
+&
+& (master_disk)>system>stcp>start_stcp_&boot_type&.cm
+(master_disk)>system>stcp>start_stcp.cm
+& 
+& NOTE: See start_stcp.cm for initializing PCI-based Ethernet cards.
+&
+& ********** If you have a multi-module system which is being served by
+& ********** S293 - Open StrataLink Phase II - comment out the following
+& ********** line. 
+&
+&             &goto NO_OSL
+&
+&  ********** Uncomment the following line to change the default trace
+&  ********** buffer size for OSL. Change SIZE to be the desired number
+&  ********** of entries per buffer. The default from Stratus is 500
+&  ********** entries.
+&
+& !osl_admin -quit -request_line 'set_default_trace_size SIZE'
+&
+&
+&  **********  Uncomment the following line to disable OSL tracing.
+&
+& !osl_admin -quit -request_line 'set_default_trace_flags -no_tracing'
+&
+&
+&  ********** Uncomment the following line to prevent OSL from stopping
+&  ********** tracing if it marks a module offline.
+&
+& !osl_admin -quit -request_line 'set_default_trace_flags -no_auto_stop'
+&
+&
+&
+&  ********** Uncomment the following lines if you are running Open
+&  ********** StrataLink Phase II.  Replace MODULE with the
+&  ********** current module. Be sure that you have defined
+&  ********** stcp_osl_mux.MODULE in your devices.tin and that
+&  ********** stcp.MODULE has also been defined.
+&
+!configure_comm_protocol sosl_net_driver
+&
+delete_file osl_daemon.out.old -brief
+rename osl_daemon.out osl_daemon.out.old
+create_file osl_daemon.out
+set_implicit_locking osl_daemon.out
+start_process 'osl_daemon #stcp.m1 #stcp_osl_mux.m1' -privileged -priority 9
+&
+&
+&
+&  ********** If auto-stop was NOT disabled above, start a process that
+&  ********** restarts OSL traces which have been auto-stopped.
+&
+start_process -privileged 'osl_admin -request_line ''restart_tracing -interval 60'''
+&
+&
+&  ********** Now start the OSL_Overseer process to handle kernel requests
+&  ********** to start OSL monitor processes.
+&
+&  ********** IMPORTANT! The OSL_Overseer must be started for
+&  ********** multi-module or multi-system configurations.
+&
+!delete_file osl_overseer.out.old -brief
+!rename osl_overseer.out osl_overseer.out.old
+!create_file osl_overseer.out
+!set_implicit_locking osl_overseer.out
+!start_process -privileged 'osl_overseer' -process_name OSL_Overseer
+&
+&  ********** Determine the max_open_servers value for the current module.
+&  ********** At least this number of osl_server processes should be started. 
+&
+!osl_admin -quit -request_line 'get max_servers'
+&set max_servs (command_status)
+&
+&
+&  ********** If you want more than the calculated number of osl_server
+&  ********** processes, change the value below to be something other
+&  ********** than 0.  It is not recommended that you start less than the
+&  ********** calculated number of osl_servers.
+&
+&set ADDITIONAL_OSL_SERVERS 0
+&
+&set max_servs (calc &max_servs& * 2 + &ADDITIONAL_OSL_SERVERS&)
+&
+&
+&  ********** If this is a bridge module, the -super switch should be
+&  ********** given to each osl_server process. 
+&
+osl_admin -quit -request_line 'get i_am_bridge'
+&set bridge (command_status)
+&
+&if &bridge& ^= 0
+&then &set opts (string -super -syserr)
+&else &set opts (string -syserr)
+&
+&
+&  **********  For bridge modules, at least twice max_open_servers osl_server
+&  ********** processes should be started.
+&
+&  ********** Too many servers for single module system,
+&  ********** so, comment out the two lines below ...
+&  ********** -RKovalcik 2012-12-17
+&
+& &if &bridge& ^= 0
+& &then &set max_servs (calc &max_servs& * 2)
+&
+&
+&  **********  Use a loop to start the desired number of servers.
+&
+&set count 1
+&label LOOP
+&
+&set out osl_server&count&.out
+&set cmd (string osl_server &$opts& -server_suffix &count&)
+&
+&
+&  ********** If it exists, save the old output file.
+&
+&if (exists &out&) ^= 0
+&then !rename -delete &out& *.old
+&
+&
+&  ********** Create a new output file and turn on implicit locking. This
+&  ********** will allow the file to be displayed while the osl_server is
+&  ********** still running.
+&
+!create_file &out&
+!set_implicit_locking &out& on
+!start_process &$cmd& -privileged -output_path &out& -priority 9 &+
+    -process_name osl_server&count&
+&
+& 
+&  ********** Loop back around until enough osl_server processes have 
+&  ********** been started.
+&
+&set count &count& + 1
+&
+&if &count& <= &max_servs&
+&then &goto LOOP
+&
+&
+&label NO_OSL
+&
+&
+&  ********** Uncomment the next block of lines for the V2302, V4304, or
+&  ********** V6308 platforms to enable the iso_server for DVD ROM support.
+&
+&  ********** If it exists, save the old iso_server output file.
+&  ********** Create a new output file and turn on implicit locking.
+&  ********** This will allow the file to be displayed while the
+&  ********** iso_server is still running.
+&
+&if (exists iso_server.out) ^= 0
+&then !rename -delete iso_server.out *.old
+!create_file iso_server.out
+!set_implicit_locking iso_server.out on
+!start_process iso_server -privileged -output_path iso_server.out -priority 9 &+
+    -process_name iso_server
+&
+&
+!change_current_dir (master_disk)>Overseer
+&
+& ********** Here is where tuning parameters can be changed
+&
+& set_tuning_parameters
+&
+& ********** Uncomment the following lines if you will be using either
+& ********** S011 -- X.29 Networking
+&
+& configure_comm_protocol vterm
+&
+& ********** Uncomment the line below if you use Token Ring
+&
+& configure_comm_protocol pci_gcomm
+&
+& ********** Uncomment the lines below each product purchased on
+& ********** this module:
+&
+& ********** S004 -- 3270 Terminal Support
+&
+& configure_comm_protocol 3270_remote
+&
+& ********** Uncomment the following block if you have purchased
+& ********** S006 -- Transaction Processing Services   
+&
+& set_lock_wait_time 10
+& delete_file tp_overseer.out.old -brief
+& rename tp_overseer.out tp_overseer.out.old
+& create_file tp_overseer.out
+& set_implicit_locking tp_overseer.out
+& start_process tp_overseer -priority 9 -privileged &+
+&               -process_name TPOverseer
+& wait_for_tp_overseer
+&
+& ********** Start the TLI Disconnect Daemon.
+&
+rename tli_disconnect_daemon.out tli_disconnect_daemon.out.old -delete
+create_file tli_disconnect_daemon.out
+set_implicit_locking tli_disconnect_daemon.out
+start_process tli_disconnect_daemon -process_name TLIDisconnectDaemon &+
+     -priority 7 -privileged
+&
+& ********** Uncomment the following block if you have a 
+& ********** multi-module system OR if you have purchased
+& ********** S002 -- Networking or S293 -- Open StrataLink
+&
+& delete_file network_watchdog.out.old -brief
+& rename network_watchdog.out network_watchdog.out.old
+& create_file network_watchdog.out
+& set_implicit_locking network_watchdog.out
+& start_process network_watchdog -priority 7 -privileged &+
+&               -process_name NetworkWatchdog
+&
+& ********** Here is a sample x25 gateway driver process.
+&
+& &goto setup_x25_and_net.&module_name&
+& 
+& &label setup_x25_and_net.m1
+&
+& delete_file g1.x25.out.old -brief
+& rename g1.x25.out g1.x25.out.old
+& create_file g1.x25.out
+& set_implicit_locking g1.x25.out
+& start_process 'x25 g1 #sync.1.10 -chan_trace -syserr &+
+&               -max_packet_size 256 -default_packet_size 256 &+
+&               -default_window_size 7' -privileged -priority 9 &+
+&               -output_path g1.x25 -process_name g1.x25
+&
+& ********** Here is a sample x25_t1 gateway driver process.
+&
+& delete_file gt1.x25.out.old -brief
+& rename gt1.x25.out gt1.x25.out.old
+& create_file gt1.x25.out
+& set_implicit_locking gt1.x25.out
+& start_process 'x25_t1 gt1 #t1.1.10 -syserr &+
+&               -max_packet_size 256 -default_packet_size 256 &+
+&               -default_window_size 7' -privileged -priority 9 &+
+&               -output_path gt1.x25 -process_name gt1.x25
+&
+& ********** Here is a sample x25 exchange process.
+&
+& delete_file x25_exchange.out.old -brief
+& rename x25_exchange.out x25_exchange.out.old
+& create_file x25_exchange.out
+& set_implicit_locking x25_exchange.out
+& start_process 'x25_exchange -syserr -log -allow_rev_charge  &+
+&                -call_thru_ext 255' -privileged -priority 7
+&
+& ********** Here is a sample network server.
+&
+& delete_file NetServer.out.old -brief
+& rename NetServer.out NetServer.out.old
+& create_file NetServer.out
+& set_implicit_locking NetServer.out
+& start_process 'network_server -syserr' -process_name NetServer &+
+&               -privileged -priority 9 -output_path NetServer.out
+&
+& ********** Here is a sample network client.
+&
+& delete_file NetClient.out.old -brief
+& rename NetClient.out NetClient.out.old
+& create_file NetClient.out
+& set_implicit_locking NetClient.out
+& start_process 'network_client -syserr' -process_name NetClient &+
+&               -privileged -priority 9 -output_path NetClient.out
+&
+& &goto setup_x25_and_net.end
+&
+& &label setup_x25_and_net.m2
+& &label setup_x25_and_net.m3  (etc.)
+& &label setup_x25_and_net.end
+&
+& ********** Here is where you enable accounting.
+& set accounting for LTS below:
+& accounting_admin (current_module)                 &+
+&                  -port_accounting                 &+
+&                  -log_commands                    &+
+&                  -log_files                       &+
+&                  -log_proc_stats_records          &+
+&                  -log_proc_user_records           &+
+&                  -log_transactions
+& 
+& ********** Uncomment the following block if you use RADIUS Support
+&
+& delete_file radius_auth_server.out.old -brief
+& rename radius_auth_server.out radius_auth_server.out.old
+& create_file radius_auth_server.out
+& set_implicit_locking radius_auth_server.out
+& start_process radius_auth_server -privileged -priority 8
+&
+& ********** S266 -- Apache Support
+&
+&if (software_purchased S266) &then &do
+&if (exists -directory (master_disk)>opt>apache)
+&then &set_string prefix_dir (master_disk)>opt>apache
+&else &set_string prefix_dir (master_disk)>system>apache2
+&if (exists -file &prefix_dir&>bin>httpd.pm)
+&then !start_process &prefix_dir&>bin>httpd -root -priority 7 &+
+          -output_path &prefix_dir&>logs>httpd.out &+
+          -current_dir &prefix_dir&>logs
+&end
+&
+& ********** S269 -- Samba
+&
+&if (software_purchased S269) &then &do
+& Samba 3.2
+&if (exists -file (master_disk)>opt>samba>bin>start_samba.cm)
+&then !(master_disk)>opt>samba>bin>start_samba
+& Samba 3.0
+&else &if (exists -file (master_disk)>system>samba>bin>start_samba.cm)
+&then !(master_disk)>system>samba>bin>start_samba
+& Samba 2.1
+&else &if (exists -file (master_disk)>system>samba>command_library>start_samba.cm)
+&then !(master_disk)>system>samba>command_library>start_samba
+&end
+&
+& ********** S272 -- MySQL
+&
+&if (software_purchased S272) &then &do
+&set_string prefix_dir (master_disk)>opt>mysql
+&if (exists -file &prefix_dir&>bin>mysql_daemon.cm)
+&then !start_process &prefix_dir&>bin>mysql_daemon -root -priority 7 &+
+          -output_path &prefix_dir&>var>mysql_daemon.out &+
+          -current_dir &prefix_dir&>var
+&end
+&
+& After this point, users will be able to login. Therefore, all daemon
+& processes that might be referenced by user activity must be started
+& before this point.
+&
+& ********** S270 -- Internet Security Package (formerly OpenSSL and OpenSSH)
+&
+&if (software_purchased S270) &then &do
+delete_file sshd.out.old -brief
+rename sshd.out sshd.out.old
+create_file sshd.out
+set_implicit_locking sshd.out
+&if (exists -file (master_disk)>opt>openssl>sbin>sshd.pm)
+& -- 2.1
+&then &set_string prefix_dir (master_disk)>opt>openssl>sbin
+& -- 2.0
+&else &set_string prefix_dir (master_disk)>system>openssl>sbin
+start_process &prefix_dir&>sshd.pm -privileged -priority 6 -root &+
+     -output_path sshd.out
+
+& ********** OpenLDAP
+& &if (exists -file (master_disk)>opt>openssl>libexec>slapd.pm)
+& &then &do
+& delete_file slapd.out.old -brief
+& rename slapd.out slapd.out.old
+& create_file slapd.out
+& set_implicit_locking slapd.out
+& start_process (master_disk)>opt>openssl>libexec>slapd.pm -privileged -priority 6 &+
+&     -root -output_path slapd.out
+& &end
+&end
+&
+& ********** Start the Overseer.
+&
+delete_file overseer.out.old -brief
+rename overseer.out overseer.out.old
+create_file overseer.out
+set_implicit_locking overseer.out
+start_process overseer -priority 8 -process_name TheOverseer -privileged
+&
+wait_for_overseer
+&
+& Start the dump copy now.
+&
+start_process copy_dump -privileged -priority 7
+&
+& Here is where you create additional print queues for specific IBM printers
+&
+& 3812 print queue
+& create_print_queue letter 66 80
+&
+& 4245 print queue
+& create_print_queue high_speed 66 132
+&
+& 4224 print queue DP quality
+& create_print_queue 42dcq 66 132
+&
+& 4224 print queue DP quality with the document insertion option
+& create_print_queue 42ddq 84 132 -no_separators
+&
+& 4224 print queue text quality
+& create_print_queue 42tc 66 132
+&
+& 4224 print queue text quality with the document insertion option
+& create_print_queue 42td 84 132 -no_separators
+&
+& 4224 print queue Near Letter Quality
+& create_print_queue 42nc 66 132
+&
+& 4224 print queue Near Letter Quality with the document insertion option
+& create_print_queue 42nd 84 132 -no_separators
+&
+&
+& ********** Here is where you log in the spoolers.  Uncomment and
+& ********** change the device names as appropriate.
+&
+& &goto setup_spoolers.&module_name&
+& 
+& &label setup_spoolers.m1
+&
+& delete_file p1.0.out.old -brief
+& rename p1.0.out p1.0.out.old
+& create_file p1.0.out
+& set_implicit_locking p1.0.out
+& spooler_admin login #p1.0
+& &goto setup_spoolers.end
+&
+& &label setup_spoolers.m2
+& &label setup_spoolers.m3  (etc.)
+& &label setup_spoolers.end
+&
+& ***** Make sure that this is placed late in the module_start_up.cm
+& ***** file where site-specific commands are to be included
+&
+& ***** If there are batch jobs which use execute_privileged_command,
+& ***** execute_as_request, or lts_uci, they will fail if batch
+& ***** processing is started before the servers
+&
+& ********** Here is where you can enable load control.
+& ********** It will start and stop the batch queue.
+&
+& load_control_admin login -log -login_priority 5
+&
+& /* 03-01-13 Greg Smith enable batch queue
+!batch_admin start normal -max_users 5
+&
+& ********** Here is where you can enable security logging.
+&
+security_admin on
+&
+& ********** Here is where you can perform login restrictions, password
+& ********** control, and related actions.
+&
+& Note: these values are from version 0.10 of the security document.  They
+& must be verified after final approval.
+&
+login_admin -module (current_module)            &+
+            -require_full_person                &+
+            -max_access_attempts     3          &+
+            -max_bad_logins          3          &+
+            -password_exp_time      60          &+
+            -min_password_len        7          &+
+            -password_grace_time     5          &+
+            -password_format        any    
+&
+& ********** Here is where you enable inactivity bumping and grace
+& ********** times.
+&
+& Note: these values are from version 0.10 of the security document.  They
+& must be verified after final approval.
+&
+logout_admin -overseer_module (current_module)  &+
+             -inactive_logout      all          &+
+             -dialup_grace_time     15          &+
+             -direct_grace_time     15
+&             
+set_password_security (current_module)          &+
+             -no_forbid_vowels                  &+
+             -forbid_repeating_chars            &+
+             -forbid_user_name                  &+
+             -forbid_repeat_password            &+
+             -forbid_frequent_changes           &+
+             -num_hours_between_changes   2     &+
+             -forbid_passwords_in_table         &+
+             -forbid_reverse                    &+
+             -forbid_anagram                    &+
+             -req_alpha_numeric                 &+
+             -no_forbid_begin_end_numeric       &+
+             -req_change_first_login
+&
+& Setting up process and object audits.
+set_process_audit on * -user Overseer.System -no_ask
+set_process_audit on * -user root.root -no_ask
+set_object_audit -internal_command delete_file
+set_object_audit -internal_command delete_dir
+set_object_audit -pathname (master_disk)>system>devices.table
+&
+& Set up accounting admin for LTS/OnGuard
+accounting_admin (current_module)               &+
+             -no_disable_accounting             &+
+             -no_port_accounting                &+
+             -log_commands                      &+
+             -log_files                         &+
+             -log_proc_stats_records            &+
+             -log_proc_user_records             &+
+             -no_log_transactions
+&
+& ********** Here is where you can synchronize the clocks.  Two approaches
+& ********** are available, though they are usually exclusive.
+&
+& ********** Uncomment the following line if you are using the public
+& ********** NTP distribution.
+&
+!(master_disk)>system>ntp>start_ntpd.cm
+&
+& ********** Uncomment the following line if you use set_jiffy_times
+& ********** to synchronize time.
+&
+& !set_jiffy_times
+&
+& ********** Uncomment the following lines if you will be using
+& ********** S238 -- Datakit support
+&
+&      Load kernel drivers/modules
+&
+& load_kernel_program >system>kernel_loadable_library>dkxqt.pm driver
+& load_kernel_program >system>kernel_loadable_library>dkty_al.pm driver
+& load_kernel_program >system>kernel_loadable_library>dkbk.pm driver
+&
+&     Start datakit interfaces
+&
+& start_process 'initialize_datakit' -privileged
+&
+&  ********** The next block of lines is required if a RAID enclosure is 
+&  ********** present (Storage Monitor)
+&
+&if (exists -file (master_disk)>system>storage_monitor>bin>start_monitor.cm)
+&then !start_process &+
+      '(master_disk)>system>storage_monitor>bin>start_monitor.cm' &+
+      -output_path (master_disk)>system>storage_monitor>log>mon_start.out &+
+      -current_dir (master_disk)>system>storage_monitor &+
+      -privileged
+&
+&
+& ********** Here is where you can start get_raid_logs.pm to 
+& ********** monitor the controller logs on ftScalable Storage 
+& ********** enclosures.
+& **********
+& ********** You will need to start a separate process for
+& ********** each additional ftScalable Storage enclosure you
+& ********** monitor.
+& ********** 
+& ********** Edit the entry below and change the device 
+& ********** names, |SysAdmin_phone|, |SysAdmin_name|, 
+& ********** and other options as appropriate.
+& **********
+& ********** You will also need to make corresponding changes
+& ********** to >system>configuration>devices.tin to add
+& ********** the correct device entries.
+& **********
+& ********** See the VOS SRB Addendum for additional details.
+& ********** It includes sample devices.tin entries and a
+& ********** sample command macro named watch_raid_logs.cm
+& ********** with entries for 2 ftScalable Storage enclosures.
+& **********
+& !start_process 'get_raid_logs.pm -raid_A #RAID_m1_20 &+
+&     -raid_B #RAID_m1_21 -monitor_password ''!monitor'' &+
+&     -log_path raid_m1_20.(date) -scs_phone |SysAdmin_phone|  &+
+&     -scs_user |SysAdmin_name| ' &+
+&     -privileged -output_path raid_m1_20 -process_name raid_m1_20
+& 
+& ********** S683 -- VOS Enterprise Backup Agent
+
+&if (software_purchased S683) &then &do
+&if (exists -file (master_disk)>system>ndmpd>bin>ndmpd.pm) &then &do
+
+&set_string NDMP_START_LOG '(master_disk)>system>ndmpd>log>ndmpd_start.(date).out'
+&set_string NDMP_START_LOG_OLD 'ndmpd_start.(date).out.old'
+
+&if (exists &NDMP_START_LOG&)
+&then !rename &NDMP_START_LOG& &NDMP_START_LOG_OLD& -delete
+!create_file &NDMP_START_LOG&
+!set_implicit_locking &NDMP_START_LOG&
+
+!start_process '(master_disk)>system>ndmpd>bin>ndmpd' &+
+     -process_name ndmpd &+
+     -output_path &NDMP_START_LOG& &+
+     -priority 4 &+ 
+     -privileged -root
+
+&end
+&end
+
+& ----------------------------------------------------------------------------
+& ********** Here is where you can add site-specific commands.
+&
+& ----------------------------------------------------------------------------
+& ********** Set the FIN_WAIT_2 time out value to 120 secs
+&
+!analyze_system -request_line 'set_stcp_param finwait2 120;quit'
+&
+& ----------------------------------------------------------------------------
+& start the sightline agent
+&
+!(master_disk)>managed_services>command_library>start_sightline.cm
+&
+& start LTS
+!(master_disk)>managed_services>command_library>start_lts.cm
+&
+!set_system_log_mode off
+!log_syserr_message 'Module start-up complete.' -direct
+&
+& ********** THE END.
